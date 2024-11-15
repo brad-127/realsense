@@ -1,4 +1,7 @@
-import pyrealsense3 as rs
+
+=======
+import pyrealsense2 as rs
+>>>>>>> 353cbc0 (class for LF 10DoF)
 import numpy as np
 import cv2
 import math
