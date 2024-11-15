@@ -123,5 +123,3 @@ class RealSenseCapture:
         cv2.destroyAllWindows()
         print("Pipeline stopped and resources released.")
 
-
->>>>>>> 82a450d (class for LF 10DoF)
