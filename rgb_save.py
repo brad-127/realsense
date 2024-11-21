@@ -6,10 +6,9 @@ from datetime import datetime
 
 
 class RealSenseCapture:
-
-
     def __init__(self, output_dir="image_data", roi_top_left=(140, 60), roi_bottom_right=(500, 420),
-                 resolution=(640, 480), depth_scale=0.03, frame_rate=30, camera_ids=[0, 1]):
+                 resolution=(640, 480), depth_scale=0.03, frame_rate=30, camera_ids=[0,1]):  # ids=[0, 1]
+
         """
         複数のRealSenseカメラからRGBとDepth画像を取得し、指定されたディレクトリに保存するクラス
         :param output_dir: 出力ディレクトリ（デフォルト: "image_data"）
@@ -46,80 +45,66 @@ class RealSenseCapture:
         # カメラごとにパイプラインを設定
         for camera_id in self.camera_ids:
             config = rs.config()
-            config.enable_device(str(camera_id))  # カメラIDを指定してデバイスを有効化
-            config.enable_stream(rs.stream.depth, resolution[0], resolution[1], rs.format.z16, frame_rate)
-            config.enable_stream(rs.stream.color, resolution[0], resolution[1], rs.format.bgr8, frame_rate)
-            self.configs.append(config)
-            pipeline = rs.pipeline()
-            pipeline.start(config)
-            self.pipelines.append(pipeline)
+            try:
+                # カメラIDを指定してデバイスを有効化
+                config.enable_device(str(camera_id))
+                config.enable_stream(rs.stream.depth, resolution[0], resolution[1], rs.format.z16, frame_rate)
+                config.enable_stream(rs.stream.color, resolution[0], resolution[1], rs.format.bgr8, frame_rate)
+                self.configs.append(config)
+                pipeline = rs.pipeline()
+                pipeline.start(config)
+                self.pipelines.append(pipeline)
+                print(f"Camera {camera_id} started successfully.")
+            except Exception as e:
+                print(f"Error with camera {camera_id}: {e}")
 
         # 初期フレーム番号
         self.frame_num = 0
 
-    def capture_and_save(self):
-        """
-        フレームを取得して、指定されたディレクトリに保存する処理を行います
-        """
-        self.frame_num += 1
 
-        frames_list = []
-        for pipeline in self.pipelines:
-            frames = pipeline.wait_for_frames()
-            frames_list.append(frames)
+        def capture_and_return(self):
+            """
+            フレームを取得して、画像データを返す
+            """
+            self.frame_num += 1
 
-        # 各カメラからRGBとDepth画像を取得
-        for i, frames in enumerate(frames_list):
-            color_frame = frames.get_color_frame()
-            depth_frame = frames.get_depth_frame()
+            frames_list = []
+            for pipeline in self.pipelines:
+                frames = pipeline.wait_for_frames()
+                frames_list.append(frames)
 
-            # 画像データをNumPy配列に変換
-            color_image = np.asanyarray(color_frame.get_data())
-            depth_image = np.asanyarray(depth_frame.get_data())
+            rgb_frames = []
+            depth_frames = []
+            # 各カメラからRGBとDepth画像を取得
+            for i, frames in enumerate(frames_list):
+                color_frame = frames.get_color_frame()
+                depth_frame = frames.get_depth_frame()
 
-            # ROIを切り出し
-            roi_color = color_image[self.roi_top_left[1]:self.roi_bottom_right[1], 
-                                    self.roi_top_left[0]:self.roi_bottom_right[0]]
-            roi_depth = depth_image[self.roi_top_left[1]:self.roi_bottom_right[1], 
-                                    self.roi_top_left[0]:self.roi_bottom_right[0]]
+                # 画像データをNumPy配列に変換
+                color_image = np.asanyarray(color_frame.get_data())
+                depth_image = np.asanyarray(depth_frame.get_data())
 
-            # ROIを縦に反転
-            roi_flipped = cv2.flip(roi_color, 0)
-            resized_bgr = cv2.resize(roi_flipped, (160, 160))
+                # ROIを切り出し
+                roi_color = color_image[self.roi_top_left[1]:self.roi_bottom_right[1], 
+                                        self.roi_top_left[0]:self.roi_bottom_right[0]]
+                roi_depth = depth_image[self.roi_top_left[1]:self.roi_bottom_right[1], 
+                                        self.roi_top_left[0]:self.roi_bottom_right[0]]
 
-            # BGRからRGBに変換
-            resized_rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB)
+                # ROIを縦に反転
+                roi_flipped = cv2.flip(roi_color, 0)
+                resized_bgr = cv2.resize(roi_flipped, (160, 160))
 
-            # 深度画像を160x160にリサイズ
-            resized_depth = cv2.resize(roi_depth, (160, 160), interpolation=cv2.INTER_NEAREST)
-            resized_depth_flipped = cv2.flip(resized_depth, 0)
+                # BGRからRGBに変換
+                resized_rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB)
 
-            # 深度画像のカラーマップを適用
-            depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(resized_depth_flipped, alpha=0.03), cv2.COLORMAP_JET)
+                # 深度画像を160x160にリサイズ
+                resized_depth = cv2.resize(roi_depth, (160, 160), interpolation=cv2.INTER_NEAREST)
+                resized_depth_flipped = cv2.flip(resized_depth, 0)
 
-            # RGBD画像を生成
-            rgbd_image = np.dstack((resized_rgb, resized_depth_flipped))
+                # RGBD画像を生成
+                rgbd_image = np.dstack((resized_rgb, resized_depth_flipped))
 
-            # フレームを表示
-            cv2.imshow(f"RGB Image - Camera {i}", resized_bgr)
-            cv2.imshow(f"Depth Image - Camera {i}", depth_colormap)
+                rgb_frames.append(resized_bgr)
+                depth_frames.append(resized_depth_flipped)
 
-            # 画像を保存
-            rgb_filename = os.path.join(self.img_dir, f"camera_{i}_rgb_frame_{self.frame_num:04d}.png")
-            depth_filename = os.path.join(self.img_dir, f"camera_{i}_depth_frame_{self.frame_num:04d}.png")
-            cv2.imwrite(rgb_filename, resized_bgr)
-            cv2.imwrite(depth_filename, depth_colormap)
-
-            # RGBDデータを.npyファイルとして保存
-            rgbd_filename = os.path.join(self.data_dir, f"camera_{i}_rgbd_frame_{self.frame_num:04d}.npy")
-            np.save(rgbd_filename, rgbd_image)
-
-        print(f"\rFrame {self.frame_num}", end="")
-
-    def stop(self):
-        """ パイプラインを停止し、リソースを解放する """
-        for pipeline in self.pipelines:
-            pipeline.stop()
-        cv2.destroyAllWindows()
-        print("Pipeline stopped and resources released.")
-
+            return rgb_frames, depth_frames  # 画像データと深度データを返す
